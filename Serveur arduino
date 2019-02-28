@@ -1,0 +1,169 @@
+byte mac[] = { 0x90, 0xA2, 0xDA, 0x10, 0x16, 0x52 };
+IPAddress ip(192, 168, 1, 10);   
+EthernetServer server(80);       
+File webFile;                    
+char HTTP_req[REQ_BUF_SZ] = {0}; 
+char req_index = 0;              
+char txt_buf[TXT_BUF_SZ] = {0};  
+
+void setup()
+{
+    pinMode(10, OUTPUT);
+    digitalWrite(10, HIGH);
+    
+    Serial.begin(115200); 
+      while (!Serial) {
+  }
+    Serial.println("Test Carte sd");
+    if (!SD.begin(4)) {
+        Serial.println("Erreur carte sd");
+        return; 
+    }
+    Serial.println("Carte SD succes");
+    if (!SD.exists("index.htm")) {
+        Serial.println(" index.htm introuvable");
+        return;
+    }
+    Serial.println(" index.htm trouvé."); 
+    
+  Ethernet.begin(mac, ip);
+  Serial.print("Etat ");
+  server.begin();
+  Serial.print("Serveur: ");
+  Serial.println(Ethernet.localIP());
+
+
+}
+
+void loop()
+{
+    EthernetClient client = server.available();
+
+    if (client) { 
+        boolean currentLineIsBlank = true;
+        while (client.connected()) {
+            if (client.available()) {  
+                char c = client.read(); 
+                if (req_index < (REQ_BUF_SZ - 1)) {
+                    HTTP_req[req_index] = c;
+                    req_index++;
+                }
+                if (c == '\n' && currentLineIsBlank) {
+                    client.println("HTTP/1.1 200 OK");
+                    if (StrContains(HTTP_req, "ajax_inputs")) {
+                        client.println("Content-Type: text/xml");
+                        client.println("Connection: keep-alive");
+                        client.println();
+                        if (GetText(txt_buf, TXT_BUF_SZ)) {
+                          Serial.println("\r\nReceived Text:");
+                          Serial.println(txt_buf);
+                        }
+                    }
+                    else {  
+                        client.println("Content-Type: text/html");
+                        client.println("Connection: keep-alive");
+                        client.println();
+                        webFile = SD.open("index.htm");
+                        if (webFile) {
+                            while(webFile.available()) {
+                                client.write(webFile.read());
+                            }
+                            webFile.close();
+                        }
+                    }
+                    req_index = 0;
+                    StrClear(HTTP_req, REQ_BUF_SZ);
+                    break;
+                }
+                if (c == '\n') {
+                    currentLineIsBlank = true;
+                } 
+                else if (c != '\r') {
+                    currentLineIsBlank = false;
+                }
+            } 
+        } 
+        delay(1);      
+        client.stop();
+    } 
+}
+boolean GetText(char *txt, int len)
+{
+  boolean got_text = false;    
+  char *str_begin;             
+  char *str_end;               
+  int str_len = 0;
+  int txt_index = 0;
+  
+
+  str_begin = strstr(HTTP_req, "&txt=");
+  if (str_begin != NULL) {
+    str_begin = strstr(str_begin, "=");  
+    str_begin += 1;                      
+    str_end = strstr(str_begin, "&end");
+    if (str_end != NULL) {
+      str_end[0] = 0;  
+      str_len = strlen(str_begin);
+      for (int i = 0; i < str_len; i++) {
+        if (str_begin[i] != '%') {
+          if (str_begin[i] == 0) {
+            break;
+          }
+          else {
+            txt[txt_index++] = str_begin[i];
+            if (txt_index >= (len - 1)) {
+              break;
+            }
+          }
+        }
+        else {
+          if ((str_begin[i + 1] == '2') && (str_begin[i + 2] == '0')) {
+            txt[txt_index++] = ' ';
+            i += 2;
+            if (txt_index >= (len - 1)) {
+              break;
+            }
+          }
+        }
+      }
+      txt[txt_index] = 0;
+      got_text = true;
+    }
+  }
+
+  return got_text;
+}
+
+void StrClear(char *str, char length)
+{
+    for (int i = 0; i < length; i++) {
+        str[i] = 0;
+    }
+}
+
+char StrContains(char *str, char *sfind)
+{
+    char found = 0;
+    char index = 0;
+    char len;
+
+    len = strlen(str);
+    
+    if (strlen(sfind) > len) {
+        return 0;
+    }
+    while (index < len) {
+        if (str[index] == sfind[found]) {
+            found++;
+            if (strlen(sfind) == found) {
+                return 1;
+            }
+        }
+        else {
+            found = 0;
+        }
+        index++;
+    }
+
+    return 0;
+}
